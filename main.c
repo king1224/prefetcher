@@ -16,6 +16,41 @@
 
 #include "impl.c"
 
+typedef struct matrix Mat;
+typedef void (*func_t)(int *src, int *dst, int w, int h);
+
+struct matrix {
+    int row,col;
+    int *data;
+    func_t transpose;
+};
+
+void init(Mat **M)
+{
+    if((*M = malloc(sizeof(Mat))) == NULL) {
+        printf("Error malloc object Mat.\n");
+        exit(0);
+    }
+    (*M)->row = (*M)->col = 0;
+    (*M)->data = NULL;
+#ifdef NAIVE
+    (*M)->transpose = naive_transpose;
+#endif
+#ifdef SSE
+    (*M)->transpose = sse_transpose;
+#endif
+#ifdef SSEPREFETCH
+    (*M)->transpose = sse_prefetch_transpose;
+#endif
+#ifdef AVX
+    (*M)->transpose = AVX_transpose;
+#endif
+#ifdef AVXPREFETCH
+    (*M)->transpose = AVX_prefetch_transpose;
+#endif
+
+}
+
 static long diff_in_us(struct timespec t1, struct timespec t2)
 {
     struct timespec diff;
@@ -31,63 +66,77 @@ static long diff_in_us(struct timespec t1, struct timespec t2)
 
 int main()
 {
+    Mat *transposer;
+    init(&transposer);
     /* verify the result of 4x4 matrix */
     {
-        int testin[16] = { 0, 1,  2,  3,  4,  5,  6,  7,
-                           8, 9, 10, 11, 12, 13, 14, 15
-                         };
-        int testout[16];
-        int expected[16] = { 0, 4,  8, 12, 1, 5,  9, 13,
-                             2, 6, 10, 14, 3, 7, 11, 15
-                           };
+        int pos = 0;
+        int testin[4096];
+        int testout[4096];
+        int expected[4096];
+        for(int i = 0 ; i < 4096 ; ++i) testin[i]=i;
 
-        for (int y = 0; y < 4; y++) {
-            for (int x = 0; x < 4; x++)
-                printf(" %2d", testin[y * 4 + x]);
-            printf("\n");
+        for(int i = 0 ; i < 4096 ; ++i) {
+            expected[pos % 4096]=i;
+            if(i % 64 != 63)
+                pos += 64;
+            else
+                pos += 65;
         }
-        printf("\n");
-        sse_transpose(testin, testout, 4, 4);
-        for (int y = 0; y < 4; y++) {
-            for (int x = 0; x < 4; x++)
-                printf(" %2d", testout[y * 4 + x]);
-            printf("\n");
-        }
-        assert(0 == memcmp(testout, expected, 16 * sizeof(int)) &&
+
+        transposer->transpose(testin, testout, 64, 64);
+        /*printf the input, expect output, transpose output*/
+        /*
+                for (int y = 0; y < 64; y++) {
+                    for (int x = 0; x < 64; x++)
+                        printf(" %4d", testin[y * 64 + x]);
+                    printf("\n");
+                }
+                printf("\n");
+
+                for (int y = 0; y < 64; y++) {
+                    for (int x = 0; x < 64; x++)
+                        printf(" %4d", testout[y * 64 + x]);
+                    printf("\n");
+                }
+                printf("\n");
+
+                for (int y = 0; y < 64 ; y++) {
+                    for (int x = 0; x < 64 ; x++)
+                        printf(" %4d", expected[y * 64 + x]);
+                    printf("\n");
+                }
+        */
+        assert(0 == memcmp(testout, expected, 4096 * sizeof(int)) &&
                "Verification fails");
     }
 
     {
         struct timespec start, end;
         int *src  = (int *) malloc(sizeof(int) * TEST_W * TEST_H);
-        int *out0 = (int *) malloc(sizeof(int) * TEST_W * TEST_H);
-        int *out1 = (int *) malloc(sizeof(int) * TEST_W * TEST_H);
-        int *out2 = (int *) malloc(sizeof(int) * TEST_W * TEST_H);
+        int *out = (int *) malloc(sizeof(int) * TEST_W * TEST_H);
 
         srand(time(NULL));
         for (int y = 0; y < TEST_H; y++)
             for (int x = 0; x < TEST_W; x++)
                 *(src + y * TEST_W + x) = rand();
 
-        clock_gettime(CLOCK_REALTIME, &start);
-        sse_prefetch_transpose(src, out0, TEST_W, TEST_H);
-        clock_gettime(CLOCK_REALTIME, &end);
-        printf("sse prefetch: \t %ld us\n", diff_in_us(start, end));
+        FILE *f = fopen("output.txt","w");
+        if(!f) {
+            printf("Error opening output.txt.\n");
+            exit(0);
+        }
 
         clock_gettime(CLOCK_REALTIME, &start);
-        sse_transpose(src, out1, TEST_W, TEST_H);
+        transposer -> transpose(src, out, TEST_W, TEST_H);
         clock_gettime(CLOCK_REALTIME, &end);
-        printf("sse: \t\t %ld us\n", diff_in_us(start, end));
+        printf("prefetch: \t %ld us\n", diff_in_us(start, end));
+        fprintf(f,"1 ssePrefetch %ld\n",diff_in_us(start,end));
 
-        clock_gettime(CLOCK_REALTIME, &start);
-        naive_transpose(src, out2, TEST_W, TEST_H);
-        clock_gettime(CLOCK_REALTIME, &end);
-        printf("naive: \t\t %ld us\n", diff_in_us(start, end));
+        fclose(f);
 
         free(src);
-        free(out0);
-        free(out1);
-        free(out2);
+        free(out);
     }
 
     return 0;
