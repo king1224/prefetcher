@@ -64,13 +64,13 @@ void sse_prefetch_transpose(int *src, int *dst, int w, int h)
     }
 }
 
-//static __attribute__((always_inline)) inline
+static __attribute__((always_inline)) inline
 __m256i _mm256_unpacklo_epi128(__m256i a, __m256i b)
 {
     return _mm256_permute2x128_si256(a, b, 0x20);
 }
 
-//static __attribute__((always_inline)) inline
+static __attribute__((always_inline)) inline
 __m256i _mm256_unpackhi_epi128(__m256i a, __m256i b)
 {
     return _mm256_permute2x128_si256(a, b, 0x31);

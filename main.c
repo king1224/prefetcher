@@ -10,10 +10,6 @@
 #define TEST_W 4096
 #define TEST_H 4096
 
-/* provide the implementations of naive_transpose,
- * sse_transpose, sse_prefetch_transpose
- */
-
 #include "impl.c"
 
 typedef struct matrix Mat;
@@ -66,9 +62,9 @@ static long diff_in_us(struct timespec t1, struct timespec t2)
 
 int main()
 {
-    Mat *transposer;
-    init(&transposer);
-    /* verify the result of 4x4 matrix */
+    Mat *matrix_impl;
+    init(&matrix_impl);
+    /* verify the result of 64x64 matrix */
     {
         int pos = 0;
         int testin[4096];
@@ -84,29 +80,7 @@ int main()
                 pos += 65;
         }
 
-        transposer->transpose(testin, testout, 64, 64);
-        /*printf the input, expect output, transpose output*/
-        /*
-                for (int y = 0; y < 64; y++) {
-                    for (int x = 0; x < 64; x++)
-                        printf(" %4d", testin[y * 64 + x]);
-                    printf("\n");
-                }
-                printf("\n");
-
-                for (int y = 0; y < 64; y++) {
-                    for (int x = 0; x < 64; x++)
-                        printf(" %4d", testout[y * 64 + x]);
-                    printf("\n");
-                }
-                printf("\n");
-
-                for (int y = 0; y < 64 ; y++) {
-                    for (int x = 0; x < 64 ; x++)
-                        printf(" %4d", expected[y * 64 + x]);
-                    printf("\n");
-                }
-        */
+        matrix_impl -> transpose(testin, testout, 64, 64);
         assert(0 == memcmp(testout, expected, 4096 * sizeof(int)) &&
                "Verification fails");
     }
@@ -121,19 +95,10 @@ int main()
             for (int x = 0; x < TEST_W; x++)
                 *(src + y * TEST_W + x) = rand();
 
-        FILE *f = fopen("output.txt","w");
-        if(!f) {
-            printf("Error opening output.txt.\n");
-            exit(0);
-        }
-
         clock_gettime(CLOCK_REALTIME, &start);
-        transposer -> transpose(src, out, TEST_W, TEST_H);
+        matrix_impl -> transpose(src, out, TEST_W, TEST_H);
         clock_gettime(CLOCK_REALTIME, &end);
         printf("prefetch: \t %ld us\n", diff_in_us(start, end));
-        fprintf(f,"1 ssePrefetch %ld\n",diff_in_us(start,end));
-
-        fclose(f);
 
         free(src);
         free(out);
